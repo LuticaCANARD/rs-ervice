@@ -119,7 +119,7 @@ async fn main(){
 
 ## License
 
-[MIT License](./LICENSE)
+[MIT License](./License)
 
 ## If you want Contact
 
