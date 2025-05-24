@@ -3,7 +3,15 @@ name = "rs-ervice"
 version = "0.1.0"
 edition = "2024"
 
+
+[workspace]
+members = [
+    "macro_lib",
+    "worker_lib",
+]
+
 [dependencies]
+tokio = { version = "1.0", features = ["full"],optional = true }
 
 [features]
-tokio = ["tokio", "tokio-util"]
+default = [] # 기본적으로는 custom_tokio 미사용
