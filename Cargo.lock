@@ -173,7 +173,7 @@ dependencies = [
 name = "rs_ervice"
 version = "0.1.0"
 dependencies = [
- "rs_ervice_macro_lib",
+ "rs_ervice_macro_lib 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
 ]
 
@@ -184,6 +184,16 @@ dependencies = [
  "quote",
  "syn",
  "tokio",
+]
+
+[[package]]
+name = "rs_ervice_macro_lib"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ee45cc12a51571b1d272c21b710374282b24fd439ad8cbc775bace5dc023a51"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]
