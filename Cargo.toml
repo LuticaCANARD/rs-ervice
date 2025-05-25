@@ -2,7 +2,9 @@
 name = "rs_ervice"
 version = "0.1.0"
 edition = "2024"
-
+license = "MIT"
+authors = ["Lutica_CANARD <presan100@gmail.com>"]
+description = "A Rust service manager for vanilla or Tokio runtime"
 
 [workspace]
 members = [
@@ -11,7 +13,7 @@ members = [
 
 [dependencies]
 tokio = { version = "1.45.1", features = ["full"],optional = true }
-macro_lib = { path = "macro_lib" } # 매크로 라이브러리 의존성
+rs_ervice_macro_lib = { path = "macro_lib" } # 매크로 라이브러리 의존성
 
 [features]
 default = [] # 기본적으로는 custom_tokio 미사용
