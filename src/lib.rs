@@ -2,6 +2,7 @@ use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
 use std::fmt; // For custom error
 
+use std::pin::Pin;
 use std::sync::PoisonError;
 // --- Conditional Mutex and Arc ---
 #[cfg(not(feature = "tokio"))]
@@ -9,6 +10,9 @@ use std::sync::{Arc, Mutex, MutexGuard, LockResult};
 
 #[cfg(feature = "tokio")]
 use std::sync::Arc; // tokio::sync::Arc can also be used if preferred with tokio::sync::Mutex
+#[cfg(feature = "tokio")]
+use std::future::Future;
+
 #[cfg(feature = "tokio")]
 use tokio::sync::{Mutex, MutexGuard as TokioMutexGuard, OwnedMutexGuard as TokioOwnedMutexGuard};
 // Note: For tokio, locking is async. Lifecycle hooks and call patterns would need to be async.
@@ -49,21 +53,83 @@ pub trait RSContextService: Any + Send + Sync + 'static {
 }
 
 // --- RSContextBuilder: For registering and building the context ---
+#[cfg(not(feature = "tokio"))]
 pub struct RSContextBuilder {
     /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
     pending_services: MapForContainer,
     /// Stores closures to run after RSContext is built.
     after_build_hooks: Vec<Box<dyn FnOnce(&RSContext) -> Result<(), RsServiceError> + Send + Sync>>,
 }
-
+#[cfg(feature = "tokio")]
+pub struct RSContextBuilder {
+    pending_services: MapForContainer,
+    after_build_hooks: Vec<Box<dyn FnOnce(&RSContext) -> Result<(), RsServiceError> + Send + Sync>>,
+    after_build_async_hooks: Vec<
+    Box<
+        dyn Fn(Arc<RSContext>) -> Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
+        + Send
+        + Sync
+    >
+>,
+}
 impl RSContextBuilder {
+    #[cfg(not(feature = "tokio"))]
     pub fn new() -> Self {
         RSContextBuilder {
             pending_services: BTreeMap::new(),
             after_build_hooks: Vec::new(),
         }
     }
+    #[cfg(feature = "tokio")]
+    pub fn new() -> Self {
+        RSContextBuilder {
+            pending_services: BTreeMap::new(),
+            after_build_hooks: Vec::new(),
+            after_build_async_hooks: Vec::new(),
+        }
+    }
+    #[cfg(feature = "tokio")]
+    pub fn register<T>(mut self) -> Self
+    where
+        T: RSContextService, // T must implement RSContextService
+    {
+        let type_id = TypeId::of::<T>();
+        if self.pending_services.contains_key(&type_id) {
+            panic!("Service type {:?} already registered.", std::any::type_name::<T>());
+        }
 
+        let mut instance = T::on_register_crate_instance();
+
+        instance.on_service_created(&self)
+            .map_err(|e| RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e)))
+            .expect("on_service_created hook failed");
+
+        let service_arc_mutex: Arc<Mutex<T>> = Arc::new(Mutex::new(instance));
+
+        self.pending_services.insert(
+            type_id,
+            Box::new(service_arc_mutex.clone()) as ContainerStruct,
+        );
+
+        // Note: after_build_hooks must be async for tokio
+        // You may want to define a separate Vec for async hooks, or use a feature flag.
+        // For demonstration, let's assume you add an `after_build_async_hooks` Vec:
+        // (You will need to add this field to RSContextBuilder for tokio)
+        {
+            let hook = Box::new(move |ctx: Arc<RSContext>| {
+                let arc_mutex = ctx.call::<T>().expect("Service not found");
+                Box::pin(async move {
+                    let ret = arc_mutex.lock().await;
+                    ret.on_all_services_built(&ctx)
+                })  as Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
+            });
+            self.after_build_async_hooks.push(hook);
+        }
+
+        self
+    }
+
+    #[cfg(not(feature = "tokio"))]
     pub fn register<T>(mut self) -> Self
     where
         T: RSContextService, // T must implement RSContextService
@@ -93,10 +159,7 @@ impl RSContextBuilder {
         // This specific hook implementation would require T to implement on_all_services_built
         self.after_build_hooks.push(Box::new(move |ctx: &RSContext| {
             if let Some(service_access) = ctx.call::<T>() { // Using call to get the Arc<Mutex<T>>
-                #[cfg(not(feature = "tokio"))]
                 let service_guard = service_access.lock().map_err(|_| RsServiceError("Mutex poisoned".to_string()))?;
-                #[cfg(feature = "tokio")]
-                let service_guard = service_access.lock().await; // This would make the FnOnce async                
                 service_guard.on_all_services_built(ctx)?;
             }
             Ok(())
@@ -105,6 +168,7 @@ impl RSContextBuilder {
         self
     }
 
+    #[cfg(not(feature = "tokio"))]
     pub fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
         let context = RSContext {
             service_map: self.pending_services, // Move the map
@@ -116,6 +180,25 @@ impl RSContextBuilder {
         }
 
         Ok(context)
+    }
+    #[cfg(feature = "tokio")]
+    pub async fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
+        let context = RSContext {
+            service_map: self.pending_services,
+        };
+        let arc_context = Arc::new(context);
+
+        // 비동기 후크 실행 (tokio runtime에서 실행 필요)
+        for async_hook in self.after_build_async_hooks {
+            let fut = async_hook(Arc::clone(&arc_context)).await;
+        }
+
+        // Arc에서 context를 꺼내 반환
+        // Arc::try_unwrap을 사용하거나, Arc<RSContext>를 반환하도록 설계할 수도 있음
+        match Arc::try_unwrap(arc_context) {
+            Ok(context) => Ok(context),
+            Err(_) => Err(RsServiceError("Failed to unwrap Arc<RSContext> in build()".to_string())),
+        }
     }
 }
 

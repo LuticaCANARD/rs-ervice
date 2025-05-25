@@ -80,6 +80,7 @@ impl RSContextService for AnotherService {
 
 use rs_ervice::{RSContextBuilder, RSContextService, RsServiceError}; 
 
+#[cfg(not(feature = "tokio"))]
 fn main(){
 
     let service_context = RSContextBuilder::new()
@@ -106,4 +107,30 @@ fn main(){
     // Expected output: HELLO - Hi!!!!!!!!!! (Original was "Hi!!!!!!!", but it takes the result of do_something)
     println!("{}", chanting_output)
 
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::main]
+async fn main() {
+    let service_context = RSContextBuilder::new()
+        .register::<MyService>()
+        .register::<AnotherService>()
+        .build()
+        .await
+        .expect("Failed to build RSContext");
+
+    let do_service = service_context.call::<MyService>();
+
+    if do_service.is_none() {
+        panic!("MyService is not registered!");
+    }
+    let do_service = do_service.unwrap().lock().await.doing_something("Hi!".to_string());
+
+    // Expected output: HELLO - Hi!
+    println!("{}", do_service);
+
+    // To call the Chanting method from the Chant trait implemented by MyService:
+    let chanting_output = <MyService as Chant>::chanting("Hi!".to_string());
+    // Expected output: HELLO - Hi!!!!!!!!!! (Original was "Hi!!!!!!!", but it takes the result of do_something)
+    println!("{}", chanting_output);
 }
