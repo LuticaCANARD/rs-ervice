@@ -1,7 +1,10 @@
 [package]
-name = "macro_lib"
+name = "rs_ervice_macro_lib"
 version = "0.1.0"
 edition = "2024"
+description = "macro lib for rs_ervice"
+authors = ["Lutica_CANARD <presan100@gmail.com>"]
+license = "MIT"
 
 [lib]
 proc-macro = true

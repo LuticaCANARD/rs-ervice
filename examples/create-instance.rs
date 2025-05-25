@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use macro_lib::{r_service, r_service_struct};
+use rs_ervice_macro_lib::{r_service, r_service_struct};
 #[r_service_struct]
 #[derive(Debug, Clone)]
 struct MyService {
