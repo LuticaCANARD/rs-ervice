@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use macro_lib::{r_service, r_service_struct};
 #[r_service_struct]
 #[derive(Debug, Clone)]
@@ -38,6 +40,11 @@ impl RSContextService for MyService {
         println!("Service {} registered successfully!", std::any::type_name::<Self>());
         Ok(())
     }
+    fn on_all_services_built(&self, context: &rs_ervice::RSContext) -> Result<(), RsServiceError> {
+        // 모든 서비스가 빌드된 후 호출되는 메서드
+        println!("All services built successfully in context: {:?}", context.type_id());
+        Ok(())
+    }
 }
 
 #[r_service_struct]
@@ -62,7 +69,11 @@ impl RSContextService for AnotherService {
         print!("AnotherService registered!\n");
         Ok(())
     }
-    
+    fn on_all_services_built(&self, context: &rs_ervice::RSContext) -> Result<(), RsServiceError> {
+        // 모든 서비스가 빌드된 후 호출되는 메서드
+        println!("All services built successfully in context: {:?}", context.type_id());
+        Ok(())
+    }
 }
 
 /// on use...

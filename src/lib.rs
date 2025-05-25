@@ -2,6 +2,7 @@ use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
 use std::fmt; // For custom error
 
+use std::sync::PoisonError;
 // --- Conditional Mutex and Arc ---
 #[cfg(not(feature = "tokio"))]
 use std::sync::{Arc, Mutex, MutexGuard, LockResult};
@@ -24,7 +25,11 @@ impl fmt::Display for RsServiceError {
     }
 }
 
-impl std::error::Error for RsServiceError {}
+impl std::error::Error for RsServiceError {
+
+}
+type ContainerStruct = Box<dyn Any + Send + Sync + 'static>;
+type MapForContainer = BTreeMap<TypeId, ContainerStruct>;
 
 // --- Core Service Trait ---
 pub trait RSContextService: Any + Send + Sync + 'static {
@@ -38,15 +43,15 @@ pub trait RSContextService: Any + Send + Sync + 'static {
     /// or access to builder configurations.
     fn on_service_created(&mut self, builder: &RSContextBuilder) -> Result<(), RsServiceError>;
 
-    // /// (Optional) Called after all services are built and the RSContext is ready.
-    // /// This hook would be called on `&self` (obtained via MutexGuard).
-    // fn on_all_services_built(&self, context: &RSContext) -> Result<(), RsServiceError>;
+    /// (Optional) Called after all services are built and the RSContext is ready.
+    /// This hook would be called on `&self` (obtained via MutexGuard).
+    fn on_all_services_built(&self, context: &RSContext) -> Result<(), RsServiceError>;
 }
 
 // --- RSContextBuilder: For registering and building the context ---
 pub struct RSContextBuilder {
     /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
-    pending_services: BTreeMap<TypeId, Box<dyn Any + Send + Sync + 'static>>,
+    pending_services: MapForContainer,
     /// Stores closures to run after RSContext is built.
     after_build_hooks: Vec<Box<dyn FnOnce(&RSContext) -> Result<(), RsServiceError> + Send + Sync>>,
 }
@@ -81,7 +86,7 @@ impl RSContextBuilder {
         // Store the Arc<Mutex<T>> itself, but boxed and type-erased.
         self.pending_services.insert(
             type_id,
-            Box::new(service_arc_mutex.clone()) as Box<dyn Any + Send + Sync + 'static>,
+            Box::new(service_arc_mutex.clone()) as ContainerStruct,
         );
         
         // Example: Preparing an after_build hook for this service T
@@ -90,11 +95,9 @@ impl RSContextBuilder {
             if let Some(service_access) = ctx.call::<T>() { // Using call to get the Arc<Mutex<T>>
                 #[cfg(not(feature = "tokio"))]
                 let service_guard = service_access.lock().map_err(|_| RsServiceError("Mutex poisoned".to_string()))?;
-                // #[cfg(feature = "tokio")]
-                // let service_guard = service_access.lock().await; // This would make the FnOnce async
-                
-                // service_guard.on_all_services_built(ctx)?;
-                println!("on_all_services_built (simulated) for type {:?}", TypeId::of::<T>());
+                #[cfg(feature = "tokio")]
+                let service_guard = service_access.lock().await; // This would make the FnOnce async                
+                service_guard.on_all_services_built(ctx)?;
             }
             Ok(())
         }));
@@ -119,7 +122,7 @@ impl RSContextBuilder {
 // --- RSContext: Holds and provides access to services ---
 pub struct RSContext {
     /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
-    service_map: BTreeMap<TypeId, Box<dyn Any + Send + Sync + 'static>>,
+    service_map: MapForContainer,
 }
 
 impl RSContext {
@@ -131,10 +134,9 @@ impl RSContext {
     {
         self.service_map
             .get(&TypeId::of::<T>())
-            .and_then(|boxed_val| { // boxed_val is &Box<dyn Any + Send + Sync + 'static>
-                // Downcast the dyn Any back to Arc<Mutex<T>>
+            .and_then(|boxed_val| {
                 boxed_val.downcast_ref::<Arc<Mutex<T>>>()
             })
-            .cloned() // Clones the Arc<Mutex<T>>
+            .cloned()
     }
 }
