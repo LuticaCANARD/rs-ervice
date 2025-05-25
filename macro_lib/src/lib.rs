@@ -1,46 +1,59 @@
 use proc_macro::TokenStream;
+use syn::{ItemStruct,parse_macro_input,ItemImpl};
+use quote::quote;
+// --- #[r_service_struct] 매크로 ---
 
-
+// tokio feature가 활성화된 경우
 #[proc_macro_attribute]
-pub fn singleton_service(attr: TokenStream, item: TokenStream) -> TokenStream {
-    if !attr.is_empty() {
-        // If the attribute has arguments, we return an error.
-        return syn::Error::new_spanned(
-            quote::quote!(),
-            "This attribute takes no arguments"
-        ).to_compile_error().into();
-    }
+#[cfg(feature = "tokio")]
+pub fn r_service_struct(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // tokio 환경에 맞는 코드 생성 (아직 구현되지 않음)
+    // TODO: tokio용 코드 작성
+    item
+}
 
-    // 2. 아이템 파싱 (이 경우 함수)
-    let input_fn = syn::parse_macro_input!(item as syn::ItemFn);
+// tokio feature가 비활성화된 경우
+#[proc_macro_attribute]
+#[cfg(not(feature = "tokio"))]
+pub fn r_service_struct(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // attr: 애트리뷰트에 전달된 인자 (예: #[r_service_struct(name = "foo")]) -> 현재는 사용 안 함
+    // item: 애트리뷰트가 붙은 아이템 (구조체 정의)
 
-    // 3. 필요한 정보 추출
-    let vis = &input_fn.vis;         // 함수의 가시성 (pub 등)
-    let sig = &input_fn.sig;         // 함수의 시그니처 (이름, 인자, 반환 타입 등)
-    let original_block = &input_fn.block; // 함수의 원래 본문 (블록)
-    let fn_name_str = sig.ident.to_string(); // 함수 이름을 문자열로
+    // 1. 입력 파싱
+    let input_struct = parse_macro_input!(item as ItemStruct);
+    let struct_name = &input_struct.ident; // 구조체 이름 (예: MyService)
 
-    // 다른 애트리뷰트들도 그대로 유지
-    let other_attrs = &input_fn.attrs;
-
-    // 4. 새로운 코드 생성
-    let expanded = quote::quote! {
-        #(#other_attrs)* // 원래 함수에 붙어있던 다른 애트리뷰트들을 다시 적용
-        #vis #sig { // 원래 함수의 시그니처 사용
-            // 함수 시작 로그
-            println!("Entering function: {}", #fn_name_str);
-
-            // 원래 함수 본문 실행
-            let result = { #original_block };
-
-            // 함수 종료 로그
-            println!("Exiting function: {}", #fn_name_str);
-
-            // 원래 함수의 결과 반환
-            result
-        }
+    // 2. 코드 생성
+    let expanded = quote! {
+        #input_struct
+        // 추가 코드 생성 가능
     };
 
-    // 5. 생성된 TokenStream 반환
+    // 3. 생성된 코드 반환
     TokenStream::from(expanded)
 }
+
+// --- #[r_service] 매크로 ---
+
+// tokio feature가 활성화된 경우
+#[proc_macro_attribute]
+#[cfg(feature = "tokio")]
+pub fn r_service(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // tokio 환경에 맞는 코드 생성 (service 모듈 사용)
+    service::r_service(attr, item)
+}
+
+// tokio feature가 비활성화된 경우
+#[proc_macro_attribute]
+#[cfg(not(feature = "tokio"))]
+pub fn r_service(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input_impl = parse_macro_input!(item as ItemImpl);
+
+    let expanded = quote! {
+        #input_impl
+        // 추가 코드 생성 가능
+    };
+
+    TokenStream::from(expanded)
+}
+

@@ -1,3 +1,98 @@
-fn main(){
+use macro_lib::{r_service, r_service_struct};
+#[r_service_struct]
+#[derive(Debug, Clone)]
+struct MyService {
+    pub state: String,
+    //...
+}
+
+trait Chant{
+    fn chanting(st:String) -> String;
+}
+
+#[r_service]
+impl MyService  {
+    pub fn new() -> Self {
+        MyService{
+            state : "HELLO - ".to_string(),
+        }
+    }
+
+    pub fn doing_something(&self, something: String) -> String {
+        self.state.clone() + &something
+    }
+}
+
+impl Chant for MyService {
+    fn chanting(st: String) -> String {
+        st + "!!!!!"
+    }
+}
+impl RSContextService for MyService {
+    fn on_register_crate_instance() -> Self {
+        MyService::new()
+    }
     
+    fn on_service_created(&mut self, service_builder: &RSContextBuilder) -> Result<(), RsServiceError> {
+        // 서비스가 등록될 때 호출되는 메서드
+        println!("Service {} registered successfully!", std::any::type_name::<Self>());
+        Ok(())
+    }
+}
+
+#[r_service_struct]
+#[derive(Debug, Clone)]
+struct AnotherService {
+
+}
+
+#[r_service]
+impl AnotherService {
+    pub fn new() -> Self {
+        AnotherService {}
+    }
+}
+
+impl RSContextService for AnotherService {
+    fn on_register_crate_instance() -> Self {
+        AnotherService::new()
+    }
+    
+    fn on_service_created(&mut self, service_builder: &RSContextBuilder) -> Result<(), RsServiceError> {
+        print!("AnotherService registered!\n");
+        Ok(())
+    }
+    
+}
+
+/// on use...
+
+use rs_ervice::{RSContextBuilder, RSContextService, RsServiceError}; 
+
+fn main(){
+
+    let service_context = RSContextBuilder::new()
+        .register::<MyService>()
+        .register::<AnotherService>()
+        .build()
+        .expect("Failed to build RSContext");
+
+    let do_service = service_context.call::<MyService>();
+
+    if do_service.is_none() {
+        panic!("MyService is not registered!");
+    }
+    let do_service = do_service.unwrap().lock().unwrap().doing_something("Hi!".to_string());
+
+
+    
+    // Expected output: HELLO - Hi!
+    println!("{}", do_service);
+    
+    // To call the Chanting method from the Chant trait implemented by MyService:
+    // Since Chanting does not take &self, it's called like a static method associated with the trait implementation.
+    let chanting_output = <MyService as Chant>::chanting("Hi!".to_string());
+    // Expected output: HELLO - Hi!!!!!!!!!! (Original was "Hi!!!!!!!", but it takes the result of do_something)
+    println!("{}", chanting_output)
+
 }

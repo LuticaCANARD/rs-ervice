@@ -9,3 +9,7 @@ proc-macro = true
 [dependencies]
 syn = { version = "2.0", features = ["full", "extra-traits"] } # AST 파싱용
 quote = "1.0" # Rust 코드 생성용
+tokio = { version = "1.45.1", features = ["full"],optional = true }
+
+[features]
+default = [] # 기본적으로는 custom_tokio 미사용

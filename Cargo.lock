@@ -84,6 +84,7 @@ version = "0.1.0"
 dependencies = [
  "quote",
  "syn",
+ "tokio",
 ]
 
 [[package]]
@@ -178,10 +179,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rs-ervice"
+name = "rs_ervice"
 version = "0.1.0"
 dependencies = [
+ "macro_lib",
  "tokio",
+ "worker_lib",
 ]
 
 [[package]]
@@ -234,9 +237,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.45.0"
+version = "1.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2513ca694ef9ede0fb23fe71a4ee4107cb102b9dc1930f6d0fd77aae068ae165"
+checksum = "75ef51a33ef1da925cea3e4eb122833cb377c61439ca401b770f54902b806779"
 dependencies = [
  "backtrace",
  "bytes",
@@ -349,3 +352,6 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "worker_lib"
 version = "0.1.0"
+dependencies = [
+ "macro_lib",
+]
