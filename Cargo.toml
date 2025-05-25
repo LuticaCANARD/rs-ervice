@@ -6,14 +6,12 @@ edition = "2024"
 
 [workspace]
 members = [
-    "macro_lib",
-    "worker_lib",
+    "macro_lib"
 ]
 
 [dependencies]
 tokio = { version = "1.45.1", features = ["full"],optional = true }
 macro_lib = { path = "macro_lib" } # 매크로 라이브러리 의존성
-worker_lib = { path = "worker_lib" } # 워커 라이브러리 의존성
 
 [features]
 default = [] # 기본적으로는 custom_tokio 미사용
