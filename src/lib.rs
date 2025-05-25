@@ -1,24 +1,23 @@
 use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
 use std::fmt; // For custom error
+use std::sync::Arc;
 
-use std::pin::Pin;
-use std::sync::PoisonError;
+
 // --- Conditional Mutex and Arc ---
 #[cfg(not(feature = "tokio"))]
-use std::sync::{Arc, Mutex, MutexGuard, LockResult};
-
-#[cfg(feature = "tokio")]
-use std::sync::Arc; // tokio::sync::Arc can also be used if preferred with tokio::sync::Mutex
-#[cfg(feature = "tokio")]
-use std::future::Future;
-
-#[cfg(feature = "tokio")]
-use tokio::sync::{Mutex, MutexGuard as TokioMutexGuard, OwnedMutexGuard as TokioOwnedMutexGuard};
+use std::sync::Mutex;
+//-----------------------------------
 // Note: For tokio, locking is async. Lifecycle hooks and call patterns would need to be async.
 // For this summary, we'll focus on the std::sync::Mutex path for simplicity in sync hook calls.
 // A full tokio version would require async traits for hooks or async closures.
-
+#[cfg(feature = "tokio")]
+use tokio::sync::Mutex;
+#[cfg(feature = "tokio")]
+use std::{
+    pin::Pin,
+    future::Future
+};
 // --- Custom Error Type (Example) ---
 #[derive(Debug)]
 pub struct RsServiceError(String);
@@ -63,7 +62,6 @@ pub struct RSContextBuilder {
 #[cfg(feature = "tokio")]
 pub struct RSContextBuilder {
     pending_services: MapForContainer,
-    after_build_hooks: Vec<Box<dyn FnOnce(&RSContext) -> Result<(), RsServiceError> + Send + Sync>>,
     after_build_async_hooks: Vec<
     Box<
         dyn Fn(Arc<RSContext>) -> Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
@@ -73,18 +71,10 @@ pub struct RSContextBuilder {
 >,
 }
 impl RSContextBuilder {
-    #[cfg(not(feature = "tokio"))]
-    pub fn new() -> Self {
-        RSContextBuilder {
-            pending_services: BTreeMap::new(),
-            after_build_hooks: Vec::new(),
-        }
-    }
     #[cfg(feature = "tokio")]
     pub fn new() -> Self {
         RSContextBuilder {
             pending_services: BTreeMap::new(),
-            after_build_hooks: Vec::new(),
             after_build_async_hooks: Vec::new(),
         }
     }
@@ -128,7 +118,32 @@ impl RSContextBuilder {
 
         self
     }
+    #[cfg(feature = "tokio")]
+    pub async fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
+        let context = RSContext {
+            service_map: self.pending_services,
+        };
+        let arc_context = Arc::new(context);
 
+        // 비동기 후크 실행 (tokio runtime에서 실행 필요)
+        for async_hook in self.after_build_async_hooks {
+            let fut = async_hook(Arc::clone(&arc_context)).await;
+        }
+
+        // Arc에서 context를 꺼내 반환
+        // Arc::try_unwrap을 사용하거나, Arc<RSContext>를 반환하도록 설계할 수도 있음
+        match Arc::try_unwrap(arc_context) {
+            Ok(context) => Ok(context),
+            Err(_) => Err(RsServiceError("Failed to unwrap Arc<RSContext> in build()".to_string())),
+        }
+    }
+    #[cfg(not(feature = "tokio"))]
+    pub fn new() -> Self {
+        RSContextBuilder {
+            pending_services: BTreeMap::new(),
+            after_build_hooks: Vec::new(),
+        }
+    }
     #[cfg(not(feature = "tokio"))]
     pub fn register<T>(mut self) -> Self
     where
@@ -180,25 +195,6 @@ impl RSContextBuilder {
         }
 
         Ok(context)
-    }
-    #[cfg(feature = "tokio")]
-    pub async fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
-        let context = RSContext {
-            service_map: self.pending_services,
-        };
-        let arc_context = Arc::new(context);
-
-        // 비동기 후크 실행 (tokio runtime에서 실행 필요)
-        for async_hook in self.after_build_async_hooks {
-            let fut = async_hook(Arc::clone(&arc_context)).await;
-        }
-
-        // Arc에서 context를 꺼내 반환
-        // Arc::try_unwrap을 사용하거나, Arc<RSContext>를 반환하도록 설계할 수도 있음
-        match Arc::try_unwrap(arc_context) {
-            Ok(context) => Ok(context),
-            Err(_) => Err(RsServiceError("Failed to unwrap Arc<RSContext> in build()".to_string())),
-        }
     }
 }
 
