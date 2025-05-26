@@ -29,11 +29,14 @@ impl MyService  {
     }
 }
 
+
 impl Chant for MyService {
     fn chanting(st: String) -> String {
         st + "!!!!!"
     }
 }
+
+#[cfg(not(feature = "tokio"))]
 impl RSContextService for MyService {
     fn on_register_crate_instance() -> Self {
         MyService::new()
@@ -45,6 +48,24 @@ impl RSContextService for MyService {
         Ok(())
     }
     fn on_all_services_built(&self, context: &rs_ervice::RSContext) -> Result<(), RsServiceError> {
+        // 모든 서비스가 빌드된 후 호출되는 메서드
+        println!("All services built successfully in context: {:?}", context.type_id());
+        Ok(())
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl RSContextService for MyService {
+    async fn on_register_crate_instance() -> Self {
+        MyService::new()
+    }
+    
+    async fn on_service_created(&mut self, service_builder: &RSContextBuilder) -> Result<(), RsServiceError> {
+        // 서비스가 등록될 때 호출되는 메서드
+        println!("Service {} registered successfully!", std::any::type_name::<Self>());
+        Ok(())
+    }
+    async fn on_all_services_built(&self, context: &rs_ervice::RSContext) -> Result<(), RsServiceError> {
         // 모든 서비스가 빌드된 후 호출되는 메서드
         println!("All services built successfully in context: {:?}", context.type_id());
         Ok(())
@@ -63,7 +84,7 @@ impl AnotherService {
         AnotherService {}
     }
 }
-
+#[cfg(not(feature = "tokio"))]
 impl RSContextService for AnotherService {
     fn on_register_crate_instance() -> Self {
         AnotherService::new()
@@ -79,8 +100,27 @@ impl RSContextService for AnotherService {
         Ok(())
     }
 }
+#[cfg(feature = "tokio")]
+impl RSContextService for AnotherService {
+    async fn on_register_crate_instance() -> Self {
+        AnotherService::new()
+    }
+    
+    async fn on_service_created(&mut self, service_builder: &RSContextBuilder) -> Result<(), RsServiceError> {
+        print!("AnotherService registered!\n");
+        Ok(())
+    }
+    async fn on_all_services_built(&self, context: &rs_ervice::RSContext)->AsyncHooksResult {
+        // 모든 서비스가 빌드된 후 호출되는 메서드
+        println!("All services built successfully in context: {:?}", context.type_id());
+        Ok(())
+    }
+}
 
 /// on use...
+
+#[cfg(feature = "tokio")]
+use rs_ervice::{AsyncHooksResult};
 
 use rs_ervice::{RSContextBuilder, RSContextService, RsServiceError}; 
 
@@ -118,7 +158,9 @@ fn main(){
 async fn main() {
     let service_context = RSContextBuilder::new()
         .register::<MyService>()
+        .await
         .register::<AnotherService>()
+        .await
         .build()
         .await
         .expect("Failed to build RSContext");
