@@ -38,6 +38,7 @@ type MapForContainer = BTreeMap<TypeId, ContainerStruct>;
 /// RSContextService: Trait for services that can be registered in RSContext.
 /// This trait defines the lifecycle hooks for services in the context.
 /// It will be managed by the RSContextBuilder.
+#[cfg(not(feature = "tokio"))]
 pub trait RSContextService: Any + Send + Sync + 'static {
     /// Called by the framework to get a new instance of the service.
     /// Typically implemented by a procedural macro.
@@ -52,6 +53,22 @@ pub trait RSContextService: Any + Send + Sync + 'static {
     /// (Optional) Called after all services are built and the RSContext is ready.
     /// This hook would be called on `&self` (obtained via MutexGuard).
     fn on_all_services_built(&self, context: &RSContext) -> Result<(), RsServiceError>;
+}
+#[cfg(feature = "tokio")]
+pub trait RSContextService: Any + Send + Sync + 'static {
+    /// Called by the framework to get a new instance of the service.
+    /// Typically implemented by a procedural macro.
+    async fn on_register_crate_instance() -> Self where Self: Sized;
+
+    /// Called after the service instance is created and before it's wrapped
+    /// in Arc<Mutex<T>> and stored in the builder.
+    /// Ideal for initial setup that might need mutable access to self
+    /// or access to builder configurations.
+    async fn on_service_created(&mut self, builder: &RSContextBuilder) -> Result<(), RsServiceError>;
+
+    /// (Optional) Called after all services are built and the RSContext is ready.
+    /// This hook would be called on `&self` (obtained via MutexGuard).
+    async fn on_all_services_built(&self, context: &RSContext) -> Result<(), RsServiceError>;
 }
 
 #[cfg(not(feature = "tokio"))]
@@ -104,9 +121,10 @@ impl RSContextBuilder {
             panic!("Service type {:?} already registered.", std::any::type_name::<T>());
         }
 
-        let mut instance = T::on_register_crate_instance();
+        let mut instance = T::on_register_crate_instance().await;
 
         instance.on_service_created(&self)
+            .await
             .map_err(|e| RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e)))
             .expect("on_service_created hook failed");
 
@@ -126,7 +144,7 @@ impl RSContextBuilder {
                 let arc_mutex = ctx.call::<T>().expect("Service not found");
                 Box::pin(async move {
                     let ret = arc_mutex.lock().await;
-                    ret.on_all_services_built(&ctx)
+                    ret.on_all_services_built(&ctx).await;
                 })  as Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
             });
             self.after_build_async_hooks.push(hook);
