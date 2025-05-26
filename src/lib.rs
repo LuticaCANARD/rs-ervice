@@ -53,7 +53,11 @@ pub trait RSContextService: Any + Send + Sync + 'static {
     /// (Optional) Called after all services are built and the RSContext is ready.
     /// This hook would be called on `&self` (obtained via MutexGuard).
     fn on_all_services_built(&self, context: &RSContext) -> Result<(), RsServiceError>;
+
 }
+#[cfg(feature = "tokio")]
+pub type AsyncHooksResult = Result<(), RsServiceError>;
+
 #[cfg(feature = "tokio")]
 pub trait RSContextService: Any + Send + Sync + 'static {
     /// Called by the framework to get a new instance of the service.
@@ -64,11 +68,11 @@ pub trait RSContextService: Any + Send + Sync + 'static {
     /// in Arc<Mutex<T>> and stored in the builder.
     /// Ideal for initial setup that might need mutable access to self
     /// or access to builder configurations.
-    async fn on_service_created(&mut self, builder: &RSContextBuilder) -> Result<(), RsServiceError>;
+    fn on_service_created(&mut self, builder: &RSContextBuilder) -> impl std::future::Future<Output = AsyncHooksResult> + Send;
 
     /// (Optional) Called after all services are built and the RSContext is ready.
     /// This hook would be called on `&self` (obtained via MutexGuard).
-    async fn on_all_services_built(&self, context: &RSContext) -> Result<(), RsServiceError>;
+    fn on_all_services_built(&self, context: &RSContext) -> impl std::future::Future<Output = AsyncHooksResult> + Send;
 }
 
 #[cfg(not(feature = "tokio"))]
@@ -112,9 +116,9 @@ impl RSContextBuilder {
     #[cfg(feature = "tokio")]
     /// Registers a service type T with the builder.
     /// T must implement RSContextService.
-    pub fn register<T>(mut self) -> Self
+    pub async fn register<T>(mut self) -> Self
     where
-        T: RSContextService, // T must implement RSContextService
+        T: RSContextService + Send + Sync + 'static, // <- Send, Sync 추가
     {
         let type_id = TypeId::of::<T>();
         if self.pending_services.contains_key(&type_id) {
@@ -143,9 +147,8 @@ impl RSContextBuilder {
             let hook = Box::new(move |ctx: Arc<RSContext>| {
                 let arc_mutex = ctx.call::<T>().expect("Service not found");
                 Box::pin(async move {
-                    let ret = arc_mutex.lock().await;
-                    ret.on_all_services_built(&ctx).await;
-                })  as Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
+                    arc_mutex.lock().await.on_all_services_built(&ctx).await
+                }) as Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
             });
             self.after_build_async_hooks.push(hook);
         }
