@@ -231,7 +231,10 @@ async fn main() {
 
 ```
 
+- Our full example is [here](./examples/create-instance.rs)
 - Our Final implement goal is [here](./documents/Ourgoal.md)
+- our key word is `intuitive`.
+- we hope make intuitive & powerful library Service manager!
 
 ### Features
 
