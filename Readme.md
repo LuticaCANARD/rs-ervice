@@ -1,5 +1,8 @@
 # rs-ervice
 
+[![Docu](https://img.shields.io/badge/docsrs-rs_ervice-black)](https://docs.rs/rs_ervice/latest/rs_ervice/)
+[![Crates.io](https://img.shields.io/badge/crates.io-rs_ervice-black)](https://crates.io/crates/rs_ervice)
+
 **intuitive & powerful library Service manager.**
 
 - Service manager library for Rust.
