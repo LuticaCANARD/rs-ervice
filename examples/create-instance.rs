@@ -19,7 +19,11 @@ impl MyService  {
             state : "HELLO - ".to_string(),
         }
     }
-
+    #[cfg(feature = "tokio")]
+    pub async fn doing_something(&self, something: String) -> String {
+        self.state.clone() + &something
+    }
+    #[cfg(not(feature = "tokio"))]
     pub fn doing_something(&self, something: String) -> String {
         self.state.clone() + &something
     }
@@ -124,7 +128,7 @@ async fn main() {
     if do_service.is_none() {
         panic!("MyService is not registered!");
     }
-    let do_service = do_service.unwrap().lock().await.doing_something("Hi!".to_string());
+    let do_service = do_service.unwrap().lock().await.doing_something("Hi!".to_string()).await;
 
     // Expected output: HELLO - Hi!
     println!("{}", do_service);

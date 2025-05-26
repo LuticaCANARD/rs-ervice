@@ -35,6 +35,9 @@ type ContainerStruct = Box<dyn Any + Send + Sync + 'static>;
 type MapForContainer = BTreeMap<TypeId, ContainerStruct>;
 
 // --- Core Service Trait ---
+/// RSContextService: Trait for services that can be registered in RSContext.
+/// This trait defines the lifecycle hooks for services in the context.
+/// It will be managed by the RSContextBuilder.
 pub trait RSContextService: Any + Send + Sync + 'static {
     /// Called by the framework to get a new instance of the service.
     /// Typically implemented by a procedural macro.
@@ -53,13 +56,22 @@ pub trait RSContextService: Any + Send + Sync + 'static {
 
 // --- RSContextBuilder: For registering and building the context ---
 #[cfg(not(feature = "tokio"))]
+/// RSContextBuilder: For registering and building the context in non-tokio environments
 pub struct RSContextBuilder {
     /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
     pending_services: MapForContainer,
     /// Stores closures to run after RSContext is built.
-    after_build_hooks: Vec<Box<dyn FnOnce(&RSContext) -> Result<(), RsServiceError> + Send + Sync>>,
+    after_build_hooks: Vec<
+    Box<
+        dyn FnOnce(&RSContext) -> 
+                Result<(), RsServiceError> 
+                + Send 
+                + Sync
+            >
+        >,
 }
 #[cfg(feature = "tokio")]
+/// RSContextBuilder: For registering and building the context in tokio
 pub struct RSContextBuilder {
     pending_services: MapForContainer,
     after_build_async_hooks: Vec<
@@ -70,8 +82,10 @@ pub struct RSContextBuilder {
     >
 >,
 }
+/// RSContextBuilder: For registering and building the context
 impl RSContextBuilder {
     #[cfg(feature = "tokio")]
+    /// Creates a new RSContextBuilder instance.
     pub fn new() -> Self {
         RSContextBuilder {
             pending_services: BTreeMap::new(),
@@ -79,6 +93,8 @@ impl RSContextBuilder {
         }
     }
     #[cfg(feature = "tokio")]
+    /// Registers a service type T with the builder.
+    /// T must implement RSContextService.
     pub fn register<T>(mut self) -> Self
     where
         T: RSContextService, // T must implement RSContextService
@@ -119,24 +135,22 @@ impl RSContextBuilder {
         self
     }
     #[cfg(feature = "tokio")]
+    /// Builds the RSContext from the registered services.
     pub async fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
         let context = RSContext {
             service_map: self.pending_services,
         };
         let arc_context = Arc::new(context);
 
-        // 비동기 후크 실행 (tokio runtime에서 실행 필요)
         for async_hook in self.after_build_async_hooks {
             let fut = async_hook(Arc::clone(&arc_context)).await;
         }
-
-        // Arc에서 context를 꺼내 반환
-        // Arc::try_unwrap을 사용하거나, Arc<RSContext>를 반환하도록 설계할 수도 있음
         match Arc::try_unwrap(arc_context) {
             Ok(context) => Ok(context),
             Err(_) => Err(RsServiceError("Failed to unwrap Arc<RSContext> in build()".to_string())),
         }
     }
+    /// You can use this method to register services in a non-tokio environment.
     #[cfg(not(feature = "tokio"))]
     pub fn new() -> Self {
         RSContextBuilder {
@@ -145,6 +159,8 @@ impl RSContextBuilder {
         }
     }
     #[cfg(not(feature = "tokio"))]
+    /// Registers a service type T with the builder.
+    /// T must implement RSContextService.
     pub fn register<T>(mut self) -> Self
     where
         T: RSContextService, // T must implement RSContextService
@@ -159,7 +175,9 @@ impl RSContextBuilder {
 
         // Call the on_service_created hook (receives &mut T and &RSContextBuilder)
         instance.on_service_created(&self)
-            .map_err(|e| RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e)))
+            .map_err(|e| 
+                RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e))
+            )
             .expect("on_service_created hook failed");
 
         let service_arc_mutex: Arc<Mutex<T>> = Arc::new(Mutex::new(instance));
@@ -184,6 +202,8 @@ impl RSContextBuilder {
     }
 
     #[cfg(not(feature = "tokio"))]
+    /// Builds the RSContext from the registered services.
+    /// and calls the on_all_services_built hooks.
     pub fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
         let context = RSContext {
             service_map: self.pending_services, // Move the map
@@ -199,6 +219,8 @@ impl RSContextBuilder {
 }
 
 // --- RSContext: Holds and provides access to services ---
+/// The main context for managing registered services.
+/// It provides methods to retrieve service instances.
 pub struct RSContext {
     /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
     service_map: MapForContainer,
