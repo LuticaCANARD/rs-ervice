@@ -54,6 +54,19 @@ pub trait RSContextService: Any + Send + Sync + 'static {
     fn on_all_services_built(&self, context: &RSContext) -> Result<(), RsServiceError>;
 }
 
+#[cfg(not(feature = "tokio"))]
+type AfterBuildHook = Box<
+    dyn FnOnce(&RSContext) -> 
+        Result<(), RsServiceError> 
+        + Send 
+        + Sync
+>;
+#[cfg(feature = "tokio")]
+type AfterAsyncBuildHook = Box<
+    dyn Fn(Arc<RSContext>) -> Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
+    + Send
+    + Sync
+>;
 // --- RSContextBuilder: For registering and building the context ---
 #[cfg(not(feature = "tokio"))]
 /// RSContextBuilder: For registering and building the context in non-tokio environments
@@ -61,26 +74,13 @@ pub struct RSContextBuilder {
     /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
     pending_services: MapForContainer,
     /// Stores closures to run after RSContext is built.
-    after_build_hooks: Vec<
-    Box<
-        dyn FnOnce(&RSContext) -> 
-                Result<(), RsServiceError> 
-                + Send 
-                + Sync
-            >
-        >,
+    after_build_hooks: Vec<AfterBuildHook>,
 }
 #[cfg(feature = "tokio")]
 /// RSContextBuilder: For registering and building the context in tokio
 pub struct RSContextBuilder {
     pending_services: MapForContainer,
-    after_build_async_hooks: Vec<
-    Box<
-        dyn Fn(Arc<RSContext>) -> Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
-        + Send
-        + Sync
-    >
->,
+    after_build_async_hooks: Vec<AfterAsyncBuildHook>,
 }
 /// RSContextBuilder: For registering and building the context
 impl RSContextBuilder {
