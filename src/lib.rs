@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use std::fmt; // For custom error
 use std::sync::Arc;
 use std::time::SystemTime; // 시간 정보 기록을 위해
-include!(concat!(env!("OUT_DIR"), "/rs_service_generated_manifest.rs"));
 
 // 각 서비스 항목에 대한 메타데이터
 #[derive(Debug, Clone)] // 쉽게 확인하고 복사할 수 있도록
@@ -49,7 +48,7 @@ impl fmt::Display for RsServiceError {
 impl std::error::Error for RsServiceError {
 
 }
-type ContainerStruct = Box<dyn Any + Send + Sync + 'static>;
+type ContainerStruct = Box<dyn Any>;
 type MapForContainer = BTreeMap<TypeId, StoredServiceInfo>;
 
 // --- Core Service Trait ---
@@ -57,7 +56,7 @@ type MapForContainer = BTreeMap<TypeId, StoredServiceInfo>;
 /// This trait defines the lifecycle hooks for services in the context.
 /// It will be managed by the RSContextBuilder.
 #[cfg(not(feature = "tokio"))]
-pub trait RSContextService: Any + Send + Sync + 'static {
+pub trait RSContextService: Any {
     /// Called by the framework to get a new instance of the service.
     /// Typically implemented by a procedural macro.
     fn on_register_crate_instance() -> Self where Self: Sized;
@@ -77,34 +76,30 @@ pub trait RSContextService: Any + Send + Sync + 'static {
 pub type AsyncHooksResult = Result<(), RsServiceError>;
 
 #[cfg(feature = "tokio")]
-pub trait RSContextService: Any + Send + Sync + 'static {
+pub trait RSContextService: Any {
     /// Called by the framework to get a new instance of the service.
     /// Typically implemented by a procedural macro.
-    async fn on_register_crate_instance() -> Self where Self: Sized;
+    fn on_register_crate_instance() -> impl Future<Output = Self> where Self: Sized;
 
     /// Called after the service instance is created and before it's wrapped
     /// in Arc<Mutex<T>> and stored in the builder.
     /// Ideal for initial setup that might need mutable access to self
     /// or access to builder configurations.
-    fn on_service_created(&mut self, builder: &RSContextBuilder) -> impl std::future::Future<Output = AsyncHooksResult> + Send;
+    fn on_service_created(&mut self, builder: &RSContextBuilder) -> impl Future<Output = AsyncHooksResult>;
 
     /// (Optional) Called after all services are built and the RSContext is ready.
     /// This hook would be called on `&self` (obtained via MutexGuard).
-    fn on_all_services_built(&self, context: &RSContext) -> impl std::future::Future<Output = AsyncHooksResult> + Send;
+    fn on_all_services_built(&self, context: &RSContext) -> impl Future<Output = AsyncHooksResult>;
 }
 
 #[cfg(not(feature = "tokio"))]
 type AfterBuildHook = Box<
     dyn FnOnce(&RSContext) -> 
-        Result<(), RsServiceError> 
-        + Send 
-        + Sync
+        Result<(), RsServiceError>
 >;
 #[cfg(feature = "tokio")]
 type AfterAsyncBuildHook = Box<
-    dyn Fn(Arc<RSContext>) -> Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
-    + Send
-    + Sync
+    dyn Fn(Arc<RSContext>) -> Pin<Box<dyn Future<Output = Result<(), RsServiceError>> >>
 >;
 // --- RSContextBuilder: For registering and building the context ---
 #[cfg(not(feature = "tokio"))]
@@ -136,14 +131,14 @@ impl RSContextBuilder {
     /// T must implement RSContextService.
     pub async fn register<T>(mut self) -> Self
     where
-        T: RSContextService + Send + Sync + 'static, // <- Send, Sync 추가
+        T: RSContextService,
     {
         let type_id = TypeId::of::<T>();
         if self.pending_services.contains_key(&type_id) {
             panic!("Service type {:?} already registered.", std::any::type_name::<T>());
         }
 
-        let mut instance = T::on_register_crate_instance().await;
+        let mut instance = T::on_register_crate_instance().await; // Call the async method to get the instance
 
         instance.on_service_created(&self)
             .await
@@ -168,8 +163,9 @@ impl RSContextBuilder {
             let hook = Box::new(move |ctx: Arc<RSContext>| {
                 let arc_mutex = ctx.call::<T>().expect("Service not found");
                 Box::pin(async move {
-                    arc_mutex.lock().await.on_all_services_built(&ctx).await
-                }) as Pin<Box<dyn Future<Output = Result<(), RsServiceError>> + Send>>
+                    let guard = arc_mutex.lock().await;
+                    guard.on_all_services_built(&ctx).await
+                }) as Pin<Box<dyn Future<Output = Result<(), RsServiceError>>>>
             });
             self.after_build_async_hooks.push(hook);
         }
