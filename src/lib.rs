@@ -1,6 +1,6 @@
 use std::{any::TypeId, sync::{Arc}};
 
-use common::MapForContainer;
+use common::{CategoryType, MapForContainer};
 
 pub mod common;
 
@@ -29,12 +29,15 @@ use tokio_rs_ervice::RSContextService;
 // --- RSContext: Holds and provides access to services ---
 /// The main context for managing registered services.
 /// It provides methods to retrieve service instances.
-pub struct RSContext {
-    /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
+pub struct RSContext where
+    {
+        /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
     service_map: MapForContainer,
+    category: CategoryType,
 }
 
-impl RSContext {
+impl RSContext
+    {
     /// Retrieves a shared, mutex-guarded service instance.
     /// Cloning the Arc increments the reference count, allowing shared ownership.
     pub fn call<T>(&self) -> Option<Arc<Mutex<T>>>
@@ -48,4 +51,5 @@ impl RSContext {
             })
             .cloned()
     }
+    
 }

@@ -33,6 +33,7 @@ type AfterAsyncBuildHook = Box<
 pub struct RSContextBuilder {
     pending_services: MapForContainer,
     after_build_async_hooks: Vec<AfterAsyncBuildHook>,
+    category_info:Box<dyn Any + Send + Sync + 'static>
 }
 
 
@@ -43,6 +44,7 @@ impl RSContextBuilder {
         RSContextBuilder {
             pending_services: BTreeMap::new(),
             after_build_async_hooks: Vec::new(),
+            category_info: Box::new(()), // Placeholder for category info, can be replaced with actual type
         }
     }
     /// Registers a service type T with the builder.
@@ -76,7 +78,7 @@ impl RSContextBuilder {
         // For demonstration, let's assume you add an `after_build_async_hooks` Vec:
         // (You will need to add this field to RSContextBuilder for tokio)
         {
-            let hook = Box::new(move |ctx: Arc<RSContext>| {
+            let hook = Box::new(move |ctx: Arc<RSContext<>>| {
                 let arc_mutex = ctx.call::<T>().expect("Service not found");
                 Box::pin(async move {
                     arc_mutex.lock().await.on_all_services_built(&ctx).await
@@ -88,8 +90,16 @@ impl RSContextBuilder {
         Ok(self)
     }
     /// Builds the RSContext from the registered services.
+    pub fn set_category<TC>(mut self, _category: TC) -> Result<Self, RsServiceError>
+    where
+        TC: Any + Send + Sync + 'static, // Ensure TC is a type that can be boxed
+    {
+        self.category_info = Box::new(_category);
+        Ok(self)
+    }
     pub async fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
         let context = RSContext {
+            category: self.category_info,
             service_map: self.pending_services,
         };
         let arc_context = Arc::new(context);
@@ -100,6 +110,7 @@ impl RSContextBuilder {
                 return Err(e);
             }
         }
+
         match Arc::try_unwrap(arc_context) {
             Ok(context) => Ok(context),
             Err(_) => Err(RsServiceError("Failed to unwrap Arc<RSContext> in build()".to_string())),

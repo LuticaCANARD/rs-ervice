@@ -38,6 +38,8 @@ pub struct RSContextBuilder {
     pending_services: MapForContainer,
     /// Stores closures to run after RSContext is built.
     after_build_hooks: Vec<AfterBuildHook>,
+    /// Placeholder for category info, can be replaced with actual type
+    category_info: Box<dyn Any + Send + Sync + 'static>,
 }
 impl RSContextBuilder {
 
@@ -90,8 +92,13 @@ impl RSContextBuilder {
 
         Ok(self)
     }
-
-    #[cfg(not(feature = "tokio"))]
+    pub fn set_category<TC>(mut self, _category: TC) -> Result<Self, RsServiceError>
+    where
+        TC: Any + Send + Sync + 'static, // Ensure TC is a type that can be boxed
+    {
+        self.category_info = Box::new(_category);
+        Ok(self)
+    }
     /// Builds the RSContext from the registered services.
     /// and calls the on_all_services_built hooks.
     pub fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
