@@ -96,6 +96,9 @@ impl RSContextBuilder {
 
         for async_hook in self.after_build_async_hooks {
             let fut = async_hook(Arc::clone(&arc_context)).await;
+            if let Err(e) = fut {
+                return Err(e);
+            }
         }
         match Arc::try_unwrap(arc_context) {
             Ok(context) => Ok(context),
