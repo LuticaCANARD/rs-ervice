@@ -4,7 +4,7 @@
 // A full tokio version would require async traits for hooks or async closures.
 use tokio::sync::Mutex;
 use std::{
-    any::{Any, TypeId}, collections::BTreeMap, future::Future, pin::Pin, process::Output, sync::Arc
+    any::{Any, TypeId}, collections::BTreeMap, future::Future, pin::Pin, sync::Arc
 };
 
 use crate::{common::{ContainerStruct, MapForContainer, RsServiceError}, RSContext};
@@ -49,7 +49,7 @@ impl RSContextBuilder {
     /// T must implement RSContextService.
     pub async fn register<T>(mut self) -> Result<Self,RsServiceError>
     where
-        T: RSContextService + Send + Sync + 'static, // <- Send, Sync 추가
+        T: RSContextService, // <- Send, Sync 추가
     {
         let type_id = TypeId::of::<T>();
         if self.pending_services.contains_key(&type_id) {
