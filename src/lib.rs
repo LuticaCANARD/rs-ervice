@@ -2,8 +2,25 @@ use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
 use std::fmt; // For custom error
 use std::sync::Arc;
+use std::time::SystemTime; // 시간 정보 기록을 위해
 
-
+// 각 서비스 항목에 대한 메타데이터
+#[derive(Debug, Clone)] // 쉽게 확인하고 복사할 수 있도록
+pub struct RsServiceEntryMetadata {
+    pub type_id_repr: String,    // TypeId의 Debug 표현 (문자열)
+    pub type_name: &'static str, // 서비스의 실제 타입 이름
+    // 필요하다면 여기에 더 많은 정보 추가 가능 (예: 서비스 버전, 설명 등)
+}
+// 전체 RSContext에 대한 메타데이터
+#[derive(Debug, Clone)]
+pub struct RsContextMeta { // 이전 RsContextMetadata에서 이름 변경 제안
+    pub registered_services: Vec<RsServiceEntryMetadata>,
+    pub creation_timestamp: SystemTime, // 컨텍스트 생성 시각
+}
+struct StoredServiceInfo {
+    container: ContainerStruct,    // Box<Arc<Mutex<T>>> 를 타입 소거한 것
+    type_name: &'static str,
+}
 // --- Conditional Mutex and Arc ---
 #[cfg(not(feature = "tokio"))]
 use std::sync::Mutex;
@@ -32,7 +49,7 @@ impl std::error::Error for RsServiceError {
 
 }
 type ContainerStruct = Box<dyn Any + Send + Sync + 'static>;
-type MapForContainer = BTreeMap<TypeId, ContainerStruct>;
+type MapForContainer = BTreeMap<TypeId, StoredServiceInfo>;
 
 // --- Core Service Trait ---
 /// RSContextService: Trait for services that can be registered in RSContext.
@@ -133,10 +150,13 @@ impl RSContextBuilder {
             .expect("on_service_created hook failed");
 
         let service_arc_mutex: Arc<Mutex<T>> = Arc::new(Mutex::new(instance));
-
+        let type_name_str: &'static str = std::any::type_name::<T>(); // Get the type name as a static string
+        let service_info = StoredServiceInfo {
+            container: Box::new(service_arc_mutex) as ContainerStruct,
+            type_name: type_name_str,
+        };
         self.pending_services.insert(
-            type_id,
-            Box::new(service_arc_mutex.clone()) as ContainerStruct,
+            type_id,service_info
         );
 
         // Note: after_build_hooks must be async for tokio
@@ -158,13 +178,30 @@ impl RSContextBuilder {
     #[cfg(feature = "tokio")]
     /// Builds the RSContext from the registered services.
     pub async fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
+
+        let mut metadata_entries: Vec<RsServiceEntryMetadata> = Vec::new();
+
+        // 참조로 순회하여 메타데이터만 수집
+        for (type_id, stored_info) in &self.pending_services {
+            metadata_entries.push(RsServiceEntryMetadata {
+                type_id_repr: format!("{:?}", type_id),
+                type_name: stored_info.type_name,
+            });
+        }
+
+        let context_metadata = RsContextMeta {
+            registered_services: metadata_entries,
+            creation_timestamp: SystemTime::now(),
+        };
         let context = RSContext {
             service_map: self.pending_services,
+            metadata: context_metadata
         };
         let arc_context = Arc::new(context);
 
         for async_hook in self.after_build_async_hooks {
             let fut = async_hook(Arc::clone(&arc_context)).await;
+            fut.map_err(|e| RsServiceError(format!("Async after_build hook failed: {}", e)))?;
         }
         match Arc::try_unwrap(arc_context) {
             Ok(context) => Ok(context),
@@ -188,36 +225,30 @@ impl RSContextBuilder {
     {
         let type_id = TypeId::of::<T>();
         if self.pending_services.contains_key(&type_id) {
-            // Or return Result<Self, Error>, or log. For now, panic.
             panic!("Service type {:?} already registered.", std::any::type_name::<T>());
         }
 
         let mut instance = T::on_register_crate_instance();
-
-        // Call the on_service_created hook (receives &mut T and &RSContextBuilder)
         instance.on_service_created(&self)
-            .map_err(|e| 
-                RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e))
-            )
+            .map_err(|e| RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e)))
             .expect("on_service_created hook failed");
 
         let service_arc_mutex: Arc<Mutex<T>> = Arc::new(Mutex::new(instance));
+        let type_name_str: &'static str = std::any::type_name::<T>(); // 타입 이름 가져오기
 
-        // Store the Arc<Mutex<T>> itself, but boxed and type-erased.
-        self.pending_services.insert(
-            type_id,
-            Box::new(service_arc_mutex.clone()) as ContainerStruct,
-        );
-        
-        // Example: Preparing an after_build hook for this service T
-        // This specific hook implementation would require T to implement on_all_services_built
-        self.after_build_hooks.push(Box::new(move |ctx: &RSContext| {
-            if let Some(service_access) = ctx.call::<T>() { // Using call to get the Arc<Mutex<T>>
-                let service_guard = service_access.lock().map_err(|_| RsServiceError("Mutex poisoned".to_string()))?;
-                service_guard.on_all_services_built(ctx)?;
-            }
-            Ok(())
-        }));
+        let service_info = StoredServiceInfo {
+            container: Box::new(service_arc_mutex) as ContainerStruct,
+            type_name: type_name_str,
+        };
+        self.pending_services.insert(type_id, service_info);
+
+        // Register the after_build hook
+        let hook = Box::new(move |ctx: &RSContext| {
+            let arc_mutex = ctx.call::<T>().expect("Service not found");
+            let guard = arc_mutex.lock().unwrap(); // MutexGuard 얻기
+            guard.on_all_services_built(ctx)
+        });
+        self.after_build_hooks.push(hook);
 
         self
     }
@@ -225,18 +256,36 @@ impl RSContextBuilder {
     #[cfg(not(feature = "tokio"))]
     /// Builds the RSContext from the registered services.
     /// and calls the on_all_services_built hooks.
-    pub fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
+    pub fn build(self) -> Result<RSContext, RsServiceError> {
+        let mut metadata_entries: Vec<RsServiceEntryMetadata> = Vec::new();
+
+        // 참조로 순회하여 메타데이터만 수집
+        for (type_id, stored_info) in &self.pending_services {
+            metadata_entries.push(RsServiceEntryMetadata {
+                type_id_repr: format!("{:?}", type_id),
+                type_name: stored_info.type_name,
+            });
+        }
+
+        let context_metadata = RsContextMeta {
+            registered_services: metadata_entries,
+            creation_timestamp: SystemTime::now(),
+        };
         let context = RSContext {
-            service_map: self.pending_services, // Move the map
+            service_map: self.pending_services, // move는 여기서 한 번만!
+            metadata: context_metadata,
         };
 
-        // Call after_build hooks
         for hook_fn in self.after_build_hooks {
             hook_fn(&context)?;
         }
 
         Ok(context)
     }
+
+
+
+
 }
 
 // --- RSContext: Holds and provides access to services ---
@@ -245,6 +294,8 @@ impl RSContextBuilder {
 pub struct RSContext {
     /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
     service_map: MapForContainer,
+    pub metadata: RsContextMeta, // 공개 필드 또는 private + getter 메소드
+
 }
 
 impl RSContext {
@@ -257,8 +308,15 @@ impl RSContext {
         self.service_map
             .get(&TypeId::of::<T>())
             .and_then(|boxed_val| {
-                boxed_val.downcast_ref::<Arc<Mutex<T>>>()
+                boxed_val.container.downcast_ref::<Arc<Mutex<T>>>()
             })
             .cloned()
+    }
+
+    pub fn is_registered<T: RSContextService>(&self) -> bool {
+        self.service_map.contains_key(&TypeId::of::<T>())
+    }
+    pub fn get_metadata(&self) -> &RsContextMeta {
+        &self.metadata
     }
 }

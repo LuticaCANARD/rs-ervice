@@ -133,6 +133,8 @@ fn main(){
         .build()
         .expect("Failed to build RSContext");
 
+    service_context.call::<MyService>();
+
     let do_service = service_context.call::<MyService>();
 
     if do_service.is_none() {
