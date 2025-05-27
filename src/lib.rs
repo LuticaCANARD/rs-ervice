@@ -116,21 +116,22 @@ impl RSContextBuilder {
     #[cfg(feature = "tokio")]
     /// Registers a service type T with the builder.
     /// T must implement RSContextService.
-    pub async fn register<T>(mut self) -> Self
+    pub async fn register<T>(mut self) -> Result<Self,RsServiceError>
     where
         T: RSContextService + Send + Sync + 'static, // <- Send, Sync 추가
     {
         let type_id = TypeId::of::<T>();
         if self.pending_services.contains_key(&type_id) {
-            panic!("Service type {:?} already registered.", std::any::type_name::<T>());
+            return Err(RsServiceError(format!("Service type {:?} already registered.", std::any::type_name::<T>())));
         }
 
         let mut instance = T::on_register_crate_instance().await;
 
         instance.on_service_created(&self)
             .await
-            .map_err(|e| RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e)))
-            .expect("on_service_created hook failed");
+            .map_err(
+                |e| RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e))
+            )?;
 
         let service_arc_mutex: Arc<Mutex<T>> = Arc::new(Mutex::new(instance));
 
@@ -153,7 +154,7 @@ impl RSContextBuilder {
             self.after_build_async_hooks.push(hook);
         }
 
-        self
+        Ok(self)
     }
     #[cfg(feature = "tokio")]
     /// Builds the RSContext from the registered services.
@@ -182,25 +183,23 @@ impl RSContextBuilder {
     #[cfg(not(feature = "tokio"))]
     /// Registers a service type T with the builder.
     /// T must implement RSContextService.
-    pub fn register<T>(mut self) -> Self
+    pub fn register<T>(mut self) -> Result<Self,RsServiceError>
     where
         T: RSContextService, // T must implement RSContextService
     {
         let type_id = TypeId::of::<T>();
         if self.pending_services.contains_key(&type_id) {
-            // Or return Result<Self, Error>, or log. For now, panic.
-            panic!("Service type {:?} already registered.", std::any::type_name::<T>());
+            return Err(RsServiceError(format!("Service type {:?} already registered.", std::any::type_name::<T>())));
         }
-
         let mut instance = T::on_register_crate_instance();
-
-        // Call the on_service_created hook (receives &mut T and &RSContextBuilder)
-        instance.on_service_created(&self)
-            .map_err(|e| 
-                RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e))
-            )
-            .expect("on_service_created hook failed");
-
+        let result_on = instance.on_service_created(&self)
+        .map_err(
+            |e| 
+            RsServiceError(format!("on_service_created hook failed for {}: {}", std::any::type_name::<T>(), e)
+        ));
+        if let Err(e) = result_on {
+            return Err(e);
+        }
         let service_arc_mutex: Arc<Mutex<T>> = Arc::new(Mutex::new(instance));
 
         // Store the Arc<Mutex<T>> itself, but boxed and type-erased.
@@ -219,7 +218,7 @@ impl RSContextBuilder {
             Ok(())
         }));
 
-        self
+        Ok(self)
     }
 
     #[cfg(not(feature = "tokio"))]
