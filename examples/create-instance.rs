@@ -106,7 +106,7 @@ impl RSContextService for AnotherService {
         AnotherService::new()
     }
     
-    async fn on_service_created(&mut self, service_builder: &RSContextBuilder) -> Result<(), RsServiceError> {
+    async fn on_service_created(&mut self, _service_builder: &RSContextBuilder) -> Result<(), RsServiceError> {
         print!("AnotherService registered!\n");
         Ok(())
     }
@@ -120,9 +120,11 @@ impl RSContextService for AnotherService {
 /// on use...
 
 #[cfg(feature = "tokio")]
-use rs_ervice::{AsyncHooksResult};
+use rs_ervice::tokio_rs_ervice::AsyncHooksResult;
 
-use rs_ervice::{RSContextBuilder, RSContextService, RsServiceError}; 
+use rs_ervice::tokio_rs_ervice::RSContextService;
+use rs_ervice::tokio_rs_ervice::RSContextBuilder;
+use rs_ervice::common::RsServiceError;
 
 #[cfg(not(feature = "tokio"))]
 fn main(){
