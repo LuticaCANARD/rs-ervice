@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::fmt; // For custom error
 use std::sync::Arc;
 use std::time::SystemTime; // 시간 정보 기록을 위해
+include!(concat!(env!("OUT_DIR"), "/rs_service_generated_manifest.rs"));
 
 // 각 서비스 항목에 대한 메타데이터
 #[derive(Debug, Clone)] // 쉽게 확인하고 복사할 수 있도록
