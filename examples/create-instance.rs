@@ -1,4 +1,5 @@
 use std::any::Any;
+use rs_ervice::common::RsServiceError;
 #[cfg(feature = "tokio")]
 use rs_ervice::tokio_rs_ervice::{AsyncHooksResult,RSContextService,RSContextBuilder};
 
