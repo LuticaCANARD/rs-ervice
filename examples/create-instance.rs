@@ -1,5 +1,9 @@
 use std::any::Any;
+#[cfg(feature = "tokio")]
+use rs_ervice::tokio_rs_ervice::{AsyncHooksResult,RSContextService,RSContextBuilder};
 
+#[cfg(not(feature = "tokio"))]
+use rs_ervice::{common::RsServiceError, vanilla_rs_ervice::{RSContextBuilder, RSContextService}};
 use rs_ervice_macro_lib::{r_service, r_service_struct};
 #[r_service_struct]
 #[derive(Debug, Clone)]
@@ -106,7 +110,7 @@ impl RSContextService for AnotherService {
         AnotherService::new()
     }
     
-    async fn on_service_created(&mut self, service_builder: &RSContextBuilder) -> Result<(), RsServiceError> {
+    async fn on_service_created(&mut self, _service_builder: &RSContextBuilder) -> Result<(), RsServiceError> {
         print!("AnotherService registered!\n");
         Ok(())
     }
@@ -119,22 +123,23 @@ impl RSContextService for AnotherService {
 
 /// on use...
 
-#[cfg(feature = "tokio")]
-use rs_ervice::{AsyncHooksResult};
 
-use rs_ervice::{RSContextBuilder, RSContextService, RsServiceError}; 
 
 #[cfg(not(feature = "tokio"))]
 fn main(){
+    use rs_ervice::RSContext;
 
-    let service_context = RSContextBuilder::new()
-        .register::<MyService>()
-        .register::<AnotherService>()
-        .build()
-        .expect("Failed to build RSContext");
 
-    service_context.call::<MyService>();
-    
+    fn build_context() -> Result<RSContext, RsServiceError> {
+        Ok(
+            RSContextBuilder::new()
+                .register::<MyService>()?
+                .register::<AnotherService>()?
+                .build()
+                .expect("Failed to build RSContext")
+            )
+    }
+    let service_context = build_context().expect("Failed to create RSContext");
     let do_service = service_context.call::<MyService>();
 
     if do_service.is_none() {
@@ -158,14 +163,19 @@ fn main(){
 #[cfg(feature = "tokio")]
 #[tokio::main]
 async fn main() {
-    let service_context = RSContextBuilder::new()
-        .register::<MyService>()
-        .await
-        .register::<AnotherService>()
-        .await
-        .build()
-        .await
-        .expect("Failed to build RSContext");
+    use rs_ervice::RSContext;
+    async fn build_context() -> Result<RSContext, RsServiceError> {
+        Ok(
+            RSContextBuilder::new()
+                .register::<MyService>()
+                .await?
+                .register::<AnotherService>()
+                .await?
+                .build()
+                .await?
+            )
+    }
+    let service_context = build_context().await.expect("Failed to build RSContext");
 
     let do_service = service_context.call::<MyService>();
 
