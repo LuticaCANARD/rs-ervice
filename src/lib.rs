@@ -8,22 +8,11 @@ pub mod common;
 pub mod vanilla_rs_ervice;
 #[cfg(not(feature = "tokio"))]
 use vanilla_rs_ervice::RSContextService;
-#[cfg(not(feature = "tokio"))]
-use std::sync::Mutex;
-
-#[cfg(feature = "tokio")]
-use tokio::sync::Mutex;
-#[cfg(feature = "tokio")]
-pub mod tokio_rs_ervice;
-#[cfg(feature = "tokio")]
-use tokio_rs_ervice::RSContextService;
 
 // --- Core Service Trait ---
 /// RSContextService: Trait for services that can be registered in RSContext.
 /// This trait defines the lifecycle hooks for services in the context.
 /// It will be managed by the RSContextBuilder.
-
-
 
 
 // --- RSContext: Holds and provides access to services ---
@@ -47,9 +36,8 @@ impl RSContext
         self.service_map
             .get(&TypeId::of::<T>())
             .and_then(|boxed_val| {
-                boxed_val.downcast_ref::<Arc<Mutex<T>>>()
+                boxed_val.container.downcast_ref::<Arc<Mutex<T>>>()
             })
             .cloned()
     }
-    
 }
