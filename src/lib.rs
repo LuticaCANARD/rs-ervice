@@ -1,4 +1,4 @@
-use std::{any::TypeId, sync::{Arc}};
+use std::{any::{Any, TypeId}, collections::BTreeMap, sync::Arc};
 
 use common::{CategoryType, MapForContainer};
 
@@ -33,6 +33,16 @@ pub struct RSContext where
         /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
     service_map: MapForContainer,
     category: CategoryType,
+    cache_for_call_service: BTreeMap<TypeId, Arc<Mutex<dyn Any>>>,
+}
+impl Default for RSContext {
+    fn default() -> Self {
+        RSContext {
+            service_map: BTreeMap::new(),
+            category: Box::new(()),
+            cache_for_call_service: BTreeMap::new(),
+        }
+    }
 }
 
 impl RSContext
@@ -49,5 +59,32 @@ impl RSContext
                 boxed_val.downcast_ref::<Arc<Mutex<T>>>()
             })
             .cloned()
+    }
+
+    pub fn call_services_by_trait<T>(
+        &mut self,
+    ) -> Option<Vec<Arc<Mutex<T>>>>
+    where T:Any
+    {
+        let trait_id = TypeId::of::<T>();
+        if let Some(services) = self.cache_for_call_service.get(&trait_id) {
+            // If we have cached services, return them
+            if let Ok(guard) = services.lock() {
+                if let Some(vec) = guard.downcast_ref::<Vec<Arc<Mutex<T>>>>() {
+                    return Some(vec.clone());
+                }
+            }
+        }
+        for (_, service) in &self.service_map {
+            if let Some(vec) = service.downcast_ref::<Vec<Arc<Mutex<T>>>>() {
+                // Cache the result for future calls
+                self.cache_for_call_service.insert(
+                    trait_id,
+                    Arc::new(Mutex::new(vec.clone())),
+                );
+                return Some(vec.clone());
+            }
+        }
+        None
     }
 }

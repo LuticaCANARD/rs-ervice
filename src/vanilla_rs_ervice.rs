@@ -106,6 +106,7 @@ impl RSContextBuilder {
         let context = RSContext {
             service_map: self.pending_services, // Move the map
             category: self.category_info,
+            ..Default::default()
         };
 
         // Call after_build hooks
@@ -115,4 +116,5 @@ impl RSContextBuilder {
 
         Ok(context)
     }
+
 }

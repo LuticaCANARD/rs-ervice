@@ -101,6 +101,7 @@ impl RSContextBuilder {
         let context = RSContext {
             category: self.category_info,
             service_map: self.pending_services,
+            ..Default::default()
         };
         let arc_context = Arc::new(context);
 
