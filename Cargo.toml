@@ -1,6 +1,6 @@
 [package]
 name = "rs_ervice"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2024"
 license = "MIT"
 authors = ["Lutica_CANARD <presan100@gmail.com>"]
@@ -17,4 +17,4 @@ tokio = { version = "1.45.1", features = ["full"],optional = true }
 rs_ervice_macro_lib = "0.1.0" # 매크로 라이브러리 의존성
 
 [features]
-default = ["tokio"] 
+default = [] 

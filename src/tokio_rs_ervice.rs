@@ -78,7 +78,7 @@ impl RSContextBuilder {
         // For demonstration, let's assume you add an `after_build_async_hooks` Vec:
         // (You will need to add this field to RSContextBuilder for tokio)
         {
-            let hook = Box::new(move |ctx: Arc<RSContext<>>| {
+            let hook = Box::new(move |ctx: Arc<RSContext>| {
                 let arc_mutex = ctx.call::<T>().expect("Service not found");
                 Box::pin(async move {
                     arc_mutex.lock().await.on_all_services_built(&ctx).await
