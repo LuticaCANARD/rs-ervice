@@ -1,5 +1,9 @@
 use std::any::Any;
+#[cfg(feature = "tokio")]
+use rs_ervice::tokio_rs_ervice::{AsyncHooksResult,RSContextService,RSContextBuilder};
 
+#[cfg(not(feature = "tokio"))]
+use rs_ervice::{common::RsServiceError, vanilla_rs_ervice::{RSContextBuilder, RSContextService}};
 use rs_ervice_macro_lib::{r_service, r_service_struct};
 #[r_service_struct]
 #[derive(Debug, Clone)]
@@ -119,12 +123,7 @@ impl RSContextService for AnotherService {
 
 /// on use...
 
-#[cfg(feature = "tokio")]
-use rs_ervice::tokio_rs_ervice::AsyncHooksResult;
 
-use rs_ervice::tokio_rs_ervice::RSContextService;
-use rs_ervice::tokio_rs_ervice::RSContextBuilder;
-use rs_ervice::common::RsServiceError;
 
 #[cfg(not(feature = "tokio"))]
 fn main(){

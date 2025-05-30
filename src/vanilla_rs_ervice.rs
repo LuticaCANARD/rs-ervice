@@ -43,11 +43,12 @@ pub struct RSContextBuilder {
 }
 impl RSContextBuilder {
 
-     #[cfg(not(feature = "tokio"))]
+    #[cfg(not(feature = "tokio"))]
     pub fn new() -> Self {
         RSContextBuilder {
             pending_services: BTreeMap::new(),
             after_build_hooks: Vec::new(),
+            category_info: Box::new(()), // Placeholder for category info, can be replaced with actual type
         }
     }
     #[cfg(not(feature = "tokio"))]
@@ -104,6 +105,7 @@ impl RSContextBuilder {
     pub fn build(self) -> Result<RSContext, RsServiceError> { // Return Result for better error handling
         let context = RSContext {
             service_map: self.pending_services, // Move the map
+            category: self.category_info,
         };
 
         // Call after_build hooks
