@@ -4,7 +4,7 @@ use rs_ervice::common::RsServiceError;
 use rs_ervice::tokio_rs_ervice::{AsyncHooksResult,RSContextService,RSContextBuilder};
 
 #[cfg(not(feature = "tokio"))]
-use rs_ervice::{common::RsServiceError, vanilla_rs_ervice::{RSContextBuilder, RSContextService}};
+use rs_ervice::{vanilla_rs_ervice::{RSContextBuilder, RSContextService}};
 use rs_ervice_macro_lib::{r_service, r_service_struct};
 #[r_service_struct]
 #[derive(Debug, Clone)]
