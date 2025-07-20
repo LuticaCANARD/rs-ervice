@@ -85,10 +85,28 @@ struct AnotherService {
 
 #[r_service]
 impl AnotherService {
-    pub fn new() -> Self {
+    pub fn new() -> Self
+     {
         AnotherService {}
     }
 }
+
+trait SpaceShip {
+    fn launch(&self) -> String;
+}
+
+impl SpaceShip for MyService {
+    fn launch(&self) -> String {
+        "My SpaceShip launched!".to_string()
+    }
+}
+
+impl SpaceShip for AnotherService {
+    fn launch(&self) -> String {
+        "Another SpaceShip launched!".to_string()
+    }
+}
+
 #[cfg(not(feature = "tokio"))]
 impl RSContextService for AnotherService {
     fn on_register_crate_instance() -> Self {
@@ -159,6 +177,8 @@ fn main(){
     // Expected output: HELLO - Hi!!!!!!!!!! (Original was "Hi!!!!!!!", but it takes the result of do_something)
     println!("{}", chanting_output)
 
+
+
 }
 
 #[cfg(feature = "tokio")]
@@ -172,11 +192,13 @@ async fn main() {
                 .await?
                 .register::<AnotherService>()
                 .await?
+                .add_relation_trait::<&dyn SpaceShip,MyService>()
+                .add_relation_trait::<&dyn SpaceShip,AnotherService>()
                 .build()
                 .await?
             )
     }
-    let service_context = build_context().await.expect("Failed to build RSContext");
+    let mut service_context = build_context().await.expect("Failed to build RSContext");
 
     let do_service = service_context.call::<MyService>();
 
@@ -192,4 +214,18 @@ async fn main() {
     let chanting_output = <MyService as Chant>::chanting("Hi!".to_string());
     // Expected output: HELLO - Hi!!!!!!!!!! (Original was "Hi!!!!!!!", but it takes the result of do_something)
     println!("{}", chanting_output);
+
+    let get_by_trait = service_context.call_services_by_trait::<&dyn SpaceShip>().await;
+
+    if let Some(services) = get_by_trait {
+        for service in services {
+            println!("Found service");
+            println!("{}", service.lock().await.launch());
+        }
+    } else {
+        println!("No services found for the SpaceShip trait.");
+    }
+
+
+
 }

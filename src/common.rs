@@ -14,4 +14,5 @@ impl fmt::Display for RsServiceError {
 
 pub type ContainerStruct = Box<dyn Any>;
 pub type MapForContainer = BTreeMap<TypeId, ContainerStruct>;
+pub type MapForContainerWithType<T> = BTreeMap<TypeId, Box<T>>;
 pub type CategoryType = Box<dyn Any + Send + Sync>;

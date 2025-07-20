@@ -33,14 +33,15 @@ pub struct RSContext where
         /// Stores Box<Arc<Mutex<T>>> type-erased as Box<dyn Any + ...>
     service_map: MapForContainer,
     category: CategoryType,
-    cache_for_call_service: BTreeMap<TypeId, Arc<Mutex<dyn Any>>>,
+    service_map_for_trait: BTreeMap<TypeId, Box<MapForContainer>>,
+
 }
 impl Default for RSContext {
     fn default() -> Self {
         RSContext {
             service_map: BTreeMap::new(),
             category: Box::new(()),
-            cache_for_call_service: BTreeMap::new(),
+            service_map_for_trait: BTreeMap::new(),
         }
     }
 }
@@ -61,6 +62,43 @@ impl RSContext
             .cloned()
     }
 
+
+    #[cfg(not(feature = "tokio"))]
+    /// Retrieves a shared, mutex-guarded service instance, with lock
+    pub fn call_with_lock<T>(
+        &self,
+    ) -> Option<std::sync::MutexGuard<'_, T>>
+    where
+        T: RSContextService,
+    {
+        self.service_map
+            .get(&TypeId::of::<T>())
+            .and_then(|boxed_val| {
+                boxed_val.downcast_ref::<Arc<Mutex<T>>>()
+            })
+            .and_then(|arc_mutex| arc_mutex.lock().ok())
+    }
+    #[cfg(feature = "tokio")]
+    /// Retrieves a shared, mutex-guarded service instance, with lock
+    pub async fn call_with_lock<T>(
+        &self,
+    ) -> Option<tokio::sync::MutexGuard<'_, T>>
+    where
+        T: RSContextService,
+    {
+        let ret = self.service_map
+            .get(&TypeId::of::<T>())
+            .and_then(|boxed_val| {
+                boxed_val.downcast_ref::<Arc<Mutex<T>>>()
+            });
+        if let Some(arc_mutex) = ret {
+            Some(arc_mutex.lock().await);
+        }
+        None
+    }
+    
+
+    #[cfg(not(feature = "tokio"))]
     pub fn call_services_by_trait<T>(
         &mut self,
     ) -> Option<Vec<Arc<Mutex<T>>>>
@@ -83,6 +121,34 @@ impl RSContext
                     Arc::new(Mutex::new(vec.clone())),
                 );
                 return Some(vec.clone());
+            }
+        }
+        None
+    }
+    #[cfg(feature = "tokio")]
+    pub async fn call_services_by_trait<T>(
+        &mut self,
+    ) -> Option<Vec<Arc<Mutex<T>>>>
+    where
+        T: Any,
+    {
+        let trait_id = TypeId::of::<T>();
+        println!("Searching for cached services for trait {:?}", std::any::type_name::<T>());
+        println!("Searching for cached services for trait {:?}", trait_id);
+
+        println!("Trait ID: {:?}", self.service_map_for_trait.keys());
+        if let Some(services) = self.service_map_for_trait.get(&trait_id) {
+            println!("Found cached services for trait {:?}", std::any::type_name::<T>());
+            println!("Cached services: {:?}", services.values());
+            // 트레잇 객체로 다운캐스팅
+            let result: Vec<Arc<Mutex<T>>> = services.values()
+                .filter_map(|boxed_val| {
+                    // Arc<Mutex<dyn Trait>>로 다운캐스팅
+                    boxed_val.downcast_ref::<Arc<Mutex<T>>>().cloned()
+                })
+                .collect();
+            if !result.is_empty() {
+                return Some(result);
             }
         }
         None
